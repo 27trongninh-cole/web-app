@@ -26,8 +26,10 @@ jobs:
       - name: Lấy danh sách tất cả flavor khai báo trong build.gradle
         id: all_flavors
         run: |
-          FLAVORS=$(grep -oP '^\s{8}\K[a-zA-Z0-9]+(?=\s*\{)' app/build.gradle | sort -u | jq -R . | jq -sc .)
+          FLAVORS=$(awk '/^ *productFlavors *\{/{flag=1; next} flag && /^ {4}\}/{flag=0} flag' app/build.gradle \
+            | grep -oP '^\s{8}\K[a-zA-Z0-9]+(?=\s*\{)' | sort -u | jq -R . | jq -sc .)
           echo "list=$FLAVORS" >> "$GITHUB_OUTPUT"
+          echo "Các flavor tìm thấy: $FLAVORS"
 
       - name: Xác định flavor nào cần build
         id: detect
