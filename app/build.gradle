@@ -54,10 +54,37 @@ android {
             applicationId "com.example.webviewapp.accountb"
             resValue "string", "app_name", "WebView B"
         }
+        accountC {
+            dimension "account"
+            applicationId "com.example.webviewapp.accountc"
+            resValue "string", "app_name", "WebView C"
+        }
+        accountD {
+            dimension "account"
+            applicationId "com.example.webviewapp.accountd"
+            resValue "string", "app_name", "WebView D"
+        }
     }
 
     buildFeatures {
         viewBinding true
+    }
+
+    applicationVariants.all { variant ->
+        // ĐẶT TÊN APK RIÊNG CHO TỪNG APP Ở ĐÂY:
+        // key = tên flavor (đúng như khai báo trong productFlavors)
+        // value = tên file mong muốn (không cần đuôi .apk)
+        def apkNames = [
+            accountA: "Mapdes",
+            accountB: "Lobbinity",
+            accountC: "Bất Phàm TV",
+            accountD: "UABE Web"
+            // accountC: "TenAppC",   <-- thêm flavor mới thì thêm 1 dòng ở đây
+        ]
+        variant.outputs.all { output ->
+            def customName = apkNames[variant.flavorName] ?: variant.flavorName
+            outputFileName = "${customName}.apk"
+        }
     }
 
     compileOptions {

@@ -1,4 +1,4 @@
 # Mỗi dòng: Tên tab|URL
-Lobbinity|https://lobbinity.onrender.com
+Bất Phàm TV|https://batphamtv.onrender.com
 Docs|https://docs.google.com
 Calendar|https://calendar.google.com

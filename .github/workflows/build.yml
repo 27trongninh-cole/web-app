@@ -10,6 +10,9 @@ on:
         type: boolean
         default: false
 
+permissions:
+  contents: write
+
 jobs:
   detect:
     runs-on: ubuntu-latest
@@ -66,8 +69,25 @@ jobs:
           echo "flavors=$TO_BUILD" >> "$GITHUB_OUTPUT"
           echo "Flavor cần build: $TO_BUILD"
 
-  build:
+  create_release:
     needs: detect
+    if: needs.detect.outputs.flavors != '[]'
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - id: tag
+        run: echo "tag=build-${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+      - name: Tạo release trống (APK sẽ được đính kèm ở bước sau)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: "Build #${{ github.run_number }}"
+          body: "Tự động build từ commit ${{ github.sha }}"
+
+  build:
+    needs: [detect, create_release]
     if: needs.detect.outputs.flavors != '[]'
     runs-on: ubuntu-latest
     strategy:
@@ -100,8 +120,8 @@ jobs:
           FLAVOR_CAP=$(echo "${{ matrix.flavor }}" | sed 's/./\U&/')
           gradle "assemble${FLAVOR_CAP}Release" --no-daemon
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
+      - name: Đính APK vào Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: apk-${{ matrix.flavor }}
-          path: app/build/outputs/apk/${{ matrix.flavor }}/release/*.apk
+          tag_name: ${{ needs.create_release.outputs.tag }}
+          files: app/build/outputs/apk/${{ matrix.flavor }}/release/*.apk
