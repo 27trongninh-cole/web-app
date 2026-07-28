@@ -1,0 +1,5 @@
+# Mỗi dòng: Tên tab|URL
+# Dòng bắt đầu bằng # sẽ bị bỏ qua
+Gmail|https://mail.google.com
+Drive|https://drive.google.com
+YouTube|https://youtube.com

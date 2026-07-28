@@ -1,0 +1,4 @@
+# Mỗi dòng: Tên tab|URL
+Gmail|https://mail.google.com
+Docs|https://docs.google.com
+Calendar|https://calendar.google.com
