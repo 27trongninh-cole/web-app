@@ -46,23 +46,23 @@ android {
     productFlavors {
         accountA {
             dimension "account"
-            applicationId "com.example.webviewapp.accounta"
-            resValue "string", "app_name", "WebView A"
+            applicationId "com.mapdes.webviewapp"
+            resValue "string", "app_name", "Mapdes"
         }
         accountB {
             dimension "account"
-            applicationId "com.example.webviewapp.accountb"
-            resValue "string", "app_name", "WebView B"
+            applicationId "com.lobbinity.webviewapp"
+            resValue "string", "app_name", "Lobbinity"
         }
         accountC {
             dimension "account"
-            applicationId "com.example.webviewapp.accountc"
-            resValue "string", "app_name", "WebView C"
+            applicationId "com.batphamtv.webviewapp"
+            resValue "string", "app_name", "Bất Phàm TV"
         }
         accountD {
             dimension "account"
-            applicationId "com.example.webviewapp.accountd"
-            resValue "string", "app_name", "WebView D"
+            applicationId "com.uabeweb.webviewapp"
+            resValue "string", "app_name", "UABE Web"
         }
     }
 

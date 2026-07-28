@@ -74,6 +74,7 @@ class MainActivity : AppCompatActivity() {
         }
         toolbar.inflateMenu(R.menu.menu_toolbar)
         toolbar.setOnMenuItemClickListener { onOptionsItemSelected(it) }
+        toolbar.overflowIcon?.setTint(android.graphics.Color.WHITE)
 
         loadTabsFromAssets()
         buildNavMenu()
@@ -137,6 +138,13 @@ class MainActivity : AppCompatActivity() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 view.loadUrl(request.url.toString())
                 return true
+            }
+
+            override fun onPageFinished(view: WebView, url: String?) {
+                super.onPageFinished(view, url)
+                if (desktopMode) {
+                    injectDesktopViewport(view)
+                }
             }
         }
 
@@ -206,6 +214,21 @@ class MainActivity : AppCompatActivity() {
     private fun URLUtilGuessFileName(url: String, contentDisposition: String?, mimeType: String?): String =
         android.webkit.URLUtil.guessFileName(url, contentDisposition, mimeType)
 
+    private fun injectDesktopViewport(webView: WebView) {
+        val js = """
+            (function() {
+                var meta = document.querySelector('meta[name="viewport"]');
+                if (!meta) {
+                    meta = document.createElement('meta');
+                    meta.setAttribute('name', 'viewport');
+                    document.head.appendChild(meta);
+                }
+                meta.setAttribute('content', 'width=1280, initial-scale=1');
+            })();
+        """.trimIndent()
+        webView.evaluateJavascript(js, null)
+    }
+
     private fun applyUserAgent(webView: WebView) {
         webView.settings.userAgentString = if (desktopMode) {
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
@@ -213,6 +236,9 @@ class MainActivity : AppCompatActivity() {
         } else {
             null // dùng User-Agent mặc định của thiết bị (di động)
         }
+        // Trang desktop thường có chữ to hơn khi hiển thị trên màn hình rộng thật,
+        // giảm zoom chữ lại một chút để giống Chrome "Request Desktop Site".
+        webView.settings.textZoom = if (desktopMode) 70 else 100
     }
 
     private fun switchToTab(index: Int) {
