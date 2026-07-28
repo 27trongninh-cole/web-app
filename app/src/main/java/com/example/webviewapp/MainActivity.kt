@@ -38,6 +38,7 @@ class MainActivity : AppCompatActivity() {
     private val webViews = mutableMapOf<Int, WebView>()
     private var currentTabIndex = 0
     private var currentPopup: WebView? = null
+    private var desktopMode = false
 
     private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
     private val fileChooserLauncher = registerForActivityResult(
