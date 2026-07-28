@@ -37,7 +37,7 @@ class MainActivity : AppCompatActivity() {
     private val tabs = mutableListOf<TabInfo>()
     private val webViews = mutableMapOf<Int, WebView>()
     private var currentTabIndex = 0
-    private var desktopMode = false
+    private var currentPopup: WebView? = null
 
     private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
     private val fileChooserLauncher = registerForActivityResult(
@@ -162,12 +162,35 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            // Cho phép mở popup / target=_blank trong cùng WebView
+            // Cho phép mở popup / target=_blank (vd màn đăng nhập Google) trong 1 WebView con
+            // xếp chồng lên trên, thay vì cố host lại chính WebView hiện tại (gây crash).
             override fun onCreateWindow(
                 view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: android.os.Message
             ): Boolean {
+                val popupWebView = WebView(this@MainActivity)
+                popupWebView.settings.javaScriptEnabled = true
+                popupWebView.settings.domStorageEnabled = true
+                popupWebView.settings.setSupportMultipleWindows(true)
+                popupWebView.settings.userAgentString = webView.settings.userAgentString
+                popupWebView.webViewClient = WebViewClient()
+                popupWebView.webChromeClient = object : WebChromeClient() {
+                    override fun onCloseWindow(window: WebView) {
+                        webContainer.removeView(popupWebView)
+                        popupWebView.destroy()
+                        currentPopup = null
+                    }
+                }
+
+                webContainer.addView(
+                    popupWebView,
+                    FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
+                    )
+                )
+                currentPopup = popupWebView
+
                 val transport = resultMsg.obj as WebView.WebViewTransport
-                transport.webView = view
+                transport.webView = popupWebView
                 resultMsg.sendToTarget()
                 return true
             }
@@ -284,6 +307,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onBackPressed() {
+        val popup = currentPopup
+        if (popup != null) {
+            webContainer.removeView(popup)
+            popup.destroy()
+            currentPopup = null
+            return
+        }
         if (drawerLayout.isDrawerOpen(GravityCompat.START)) {
             drawerLayout.closeDrawer(GravityCompat.START)
             return
