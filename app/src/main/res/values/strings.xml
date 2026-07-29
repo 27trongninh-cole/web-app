@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Multi Account WebView</string>
+    <string name="menu_desktop_mode">Chế độ máy tính</string>
+    <string name="menu_reload">Tải lại trang</string>
+    <string name="menu_home">Về trang chủ tab</string>
+</resources>

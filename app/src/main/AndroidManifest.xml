@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
+    <application
+        android:name=".WebViewApp"
+        android:allowBackup="true"
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:theme="@style/Theme.WebViewApp"
+        android:usesCleartextTraffic="false">
+
+        <!-- Màn hình đầu tiên: danh sách tài khoản (tab lớn) -->
+        <activity
+            android:name=".AccountListActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|keyboardHidden">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          6 "slot" trình duyệt, MỖI SLOT CHẠY 1 TIẾN TRÌNH RIÊNG (android:process khác nhau).
+          Đây là cơ chế tách session/cookie giữa các tab lớn (tài khoản) trong CÙNG 1 APK.
+          Muốn tăng số tài khoản tối đa: copy 1 block bên dưới, đổi tên activity + số slot,
+          rồi thêm class tương ứng trong BrowserSlots.kt.
+        -->
+        <activity android:name=".BrowserActivitySlot0" android:process=":slot0"
+            android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden" />
+        <activity android:name=".BrowserActivitySlot1" android:process=":slot1"
+            android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden" />
+        <activity android:name=".BrowserActivitySlot2" android:process=":slot2"
+            android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden" />
+        <activity android:name=".BrowserActivitySlot3" android:process=":slot3"
+            android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden" />
+        <activity android:name=".BrowserActivitySlot4" android:process=":slot4"
+            android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden" />
+        <activity android:name=".BrowserActivitySlot5" android:process=":slot5"
+            android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden" />
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+    </application>
+</manifest>
