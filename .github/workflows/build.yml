@@ -1,100 +1,16 @@
-name: Build APKs
+name: Build APK
 
 on:
   push:
     branches: [main]
-  workflow_dispatch:
-    inputs:
-      force_all:
-        description: "Build tất cả flavor bất kể có thay đổi hay không"
-        type: boolean
-        default: false
+  workflow_dispatch: {}
 
 permissions:
   contents: write
 
 jobs:
-  detect:
-    runs-on: ubuntu-latest
-    outputs:
-      flavors: ${{ steps.detect.outputs.flavors }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Lấy danh sách tất cả flavor khai báo trong build.gradle
-        id: all_flavors
-        run: |
-          FLAVORS=$(awk '/^ *productFlavors *\{/{flag=1; next} flag && /^ {4}\}/{flag=0} flag' app/build.gradle \
-            | grep -oP '^\s{8}\K[a-zA-Z0-9]+(?=\s*\{)' | sort -u | jq -R . | jq -sc .)
-          echo "list=$FLAVORS" >> "$GITHUB_OUTPUT"
-          echo "Các flavor tìm thấy: $FLAVORS"
-
-      - name: Xác định flavor nào cần build
-        id: detect
-        run: |
-          ALL='${{ steps.all_flavors.outputs.list }}'
-
-          # Build tất cả nếu: chạy thủ công với force_all=true, hoặc đây là lần push đầu tiên
-          # (before = toàn số 0), hoặc app/build.gradle bị thay đổi (có thể thêm/sửa flavor).
-          BEFORE_SHA="${{ github.event.before }}"
-          EMPTY_SHA="0000000000000000000000000000000000000000"
-
-          if [ "${{ github.event.inputs.force_all }}" = "true" ] || [ "$BEFORE_SHA" = "$EMPTY_SHA" ] || [ -z "$BEFORE_SHA" ]; then
-            echo "flavors=$ALL" >> "$GITHUB_OUTPUT"
-            echo "Build tất cả (lần đầu hoặc force_all): $ALL"
-            exit 0
-          fi
-
-          CHANGED=$(git diff --name-only "$BEFORE_SHA" "${{ github.sha }}")
-          echo "File thay đổi:"
-          echo "$CHANGED"
-
-          if echo "$CHANGED" | grep -qE '^app/build\.gradle$|^build\.gradle$|^settings\.gradle$'; then
-            echo "flavors=$ALL" >> "$GITHUB_OUTPUT"
-            echo "Cấu hình gradle thay đổi -> build tất cả: $ALL"
-            exit 0
-          fi
-
-          TO_BUILD="[]"
-          for flavor in $(echo "$ALL" | jq -r '.[]'); do
-            if echo "$CHANGED" | grep -qE "^app/src/${flavor}/"; then
-              TO_BUILD=$(echo "$TO_BUILD" | jq -c --arg f "$flavor" '. + [$f]')
-            fi
-          done
-          # Nếu có file dùng chung (app/src/main/...) thay đổi -> build lại tất cả
-          if echo "$CHANGED" | grep -qE '^app/src/main/'; then
-            TO_BUILD="$ALL"
-          fi
-
-          echo "flavors=$TO_BUILD" >> "$GITHUB_OUTPUT"
-          echo "Flavor cần build: $TO_BUILD"
-
-  create_release:
-    needs: detect
-    if: needs.detect.outputs.flavors != '[]'
-    runs-on: ubuntu-latest
-    outputs:
-      tag: ${{ steps.tag.outputs.tag }}
-    steps:
-      - id: tag
-        run: echo "tag=build-${{ github.run_number }}" >> "$GITHUB_OUTPUT"
-
-      - name: Tạo release trống (APK sẽ được đính kèm ở bước sau)
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ steps.tag.outputs.tag }}
-          name: "Build #${{ github.run_number }}"
-          body: "Tự động build từ commit ${{ github.sha }}"
-
   build:
-    needs: [detect, create_release]
-    if: needs.detect.outputs.flavors != '[]'
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        flavor: ${{ fromJson(needs.detect.outputs.flavors) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -109,21 +25,21 @@ jobs:
         with:
           gradle-version: "8.7"
 
-      - name: Giải mã keystore dùng chung để ký APK
+      - name: Giải mã keystore để ký APK
         run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > $RUNNER_TEMP/release.keystore
 
-      - name: Build APK release cho flavor ${{ matrix.flavor }}
+      - name: Build APK release
         env:
           KEYSTORE_PATH: ${{ runner.temp }}/release.keystore
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          FLAVOR_CAP=$(echo "${{ matrix.flavor }}" | sed 's/./\U&/')
-          gradle "assemble${FLAVOR_CAP}Release" --no-daemon
+        run: gradle assembleRelease --no-daemon
 
-      - name: Đính APK vào Release
+      - name: Tạo Release và đính kèm APK
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.create_release.outputs.tag }}
-          files: app/build/outputs/apk/${{ matrix.flavor }}/release/*.apk
+          tag_name: build-${{ github.run_number }}
+          name: "Build #${{ github.run_number }}"
+          body: "Tự động build từ commit ${{ github.sha }}"
+          files: app/build/outputs/apk/release/*.apk

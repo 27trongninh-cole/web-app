@@ -8,7 +8,8 @@ android {
     compileSdk 34
 
     defaultConfig {
-        minSdk 26
+        applicationId "com.example.webviewapp"
+        minSdk 28
         targetSdk 34
         versionCode 1
         versionName "1.0"
@@ -16,7 +17,6 @@ android {
 
     signingConfigs {
         release {
-            // Lấy thông tin từ biến môi trường do GitHub Actions truyền vào
             storeFile file(System.getenv("KEYSTORE_PATH") ?: "debug.keystore")
             storePassword System.getenv("KEYSTORE_PASSWORD") ?: "android"
             keyAlias System.getenv("KEY_ALIAS") ?: "androiddebugkey"
@@ -34,56 +34,13 @@ android {
         }
     }
 
-    flavorDimensions = ["account"]
-
-    // ============================================================
-    // MỖI FLAVOR = 1 APK RIÊNG, applicationId khác nhau
-    // => cài song song trên cùng máy không xung đột.
-    // Link tab đọc từ app/src/<tên flavor>/assets/links.txt
-    // Thêm tài khoản mới: copy 1 block bên dưới, đổi tên + applicationId,
-    // rồi tạo file app/src/<tenFlavorMoi>/assets/links.txt
-    // ============================================================
-    productFlavors {
-        accountA {
-            dimension "account"
-            applicationId "com.mapdes.webviewapp"
-            resValue "string", "app_name", "Mapdes"
-        }
-        accountB {
-            dimension "account"
-            applicationId "com.lobbinity.webviewapp"
-            resValue "string", "app_name", "Lobbinity"
-        }
-        accountC {
-            dimension "account"
-            applicationId "com.batphamtv.webviewapp"
-            resValue "string", "app_name", "Bất Phàm TV"
-        }
-        accountD {
-            dimension "account"
-            applicationId "com.uabeweb.webviewapp"
-            resValue "string", "app_name", "UABE Web"
-        }
-    }
-
     buildFeatures {
         viewBinding true
     }
 
     applicationVariants.all { variant ->
-        // ĐẶT TÊN APK RIÊNG CHO TỪNG APP Ở ĐÂY:
-        // key = tên flavor (đúng như khai báo trong productFlavors)
-        // value = tên file mong muốn (không cần đuôi .apk)
-        def apkNames = [
-            accountA: "Mapdes",
-            accountB: "Lobbinity",
-            accountC: "Bất Phàm TV",
-            accountD: "UABE Web"
-            // accountC: "TenAppC",   <-- thêm flavor mới thì thêm 1 dòng ở đây
-        ]
         variant.outputs.all { output ->
-            def customName = apkNames[variant.flavorName] ?: variant.flavorName
-            outputFileName = "${customName}.apk"
+            outputFileName = "MultiAccountWebView.apk"
         }
     }
 

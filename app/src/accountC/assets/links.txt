@@ -1,4 +1,0 @@
-# Mỗi dòng: Tên tab|URL
-Bất Phàm TV|https://batphamtv.onrender.com
-Docs|https://docs.google.com
-Calendar|https://calendar.google.com

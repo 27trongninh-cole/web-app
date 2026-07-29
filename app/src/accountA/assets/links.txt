@@ -1,5 +1,0 @@
-# Mỗi dòng: Tên tab|URL
-# Dòng bắt đầu bằng # sẽ bị bỏ qua
-Mapdes|https://mapdes.onrender.com
-Drive|https://drive.google.com
-YouTube|https://youtube.com

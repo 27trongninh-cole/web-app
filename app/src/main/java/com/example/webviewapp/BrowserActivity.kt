@@ -1,6 +1,7 @@
 package com.example.webviewapp
 
 import android.annotation.SuppressLint
+import android.app.AlertDialog
 import android.app.DownloadManager
 import android.content.Context
 import android.net.Uri
@@ -10,7 +11,10 @@ import android.view.Menu
 import android.view.MenuItem
 import android.view.View
 import android.webkit.*
+import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.ProgressBar
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -18,15 +22,21 @@ import androidx.core.view.GravityCompat
 import androidx.drawerlayout.widget.DrawerLayout
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.navigation.NavigationView
+import org.json.JSONArray
+import org.json.JSONObject
+import java.util.UUID
 
 /**
- * Trình duyệt nhiều tab dựa trên WebView.
- * Danh sách tab được đọc từ assets/links.txt (mỗi dòng: "Tên tab|https://url").
- * File links.txt khác nhau theo từng flavor (xem app/src/<flavor>/assets/links.txt).
+ * Màn hình trình duyệt cho 1 "tab lớn" (1 tài khoản). Được mở qua 1 trong các lớp
+ * BrowserActivitySlot0..5 — mỗi lớp chạy ở 1 tiến trình Android riêng (xem AndroidManifest
+ * + WebViewApp.kt) nên cookie/đăng nhập của tab lớn này KHÔNG lẫn với tab lớn khác.
+ *
+ * Bên trong 1 tab lớn có các "tab nhỏ" (Dashboard, Web, ...) y hệt cơ chế cũ:
+ * lưu trong SharedPreferences riêng theo bigTabId, có thể thêm/xoá ngay trong app.
  */
-class MainActivity : AppCompatActivity() {
+open class BrowserActivity : AppCompatActivity() {
 
-    private data class TabInfo(val name: String, val url: String)
+    private data class SubTab(val id: String, var name: String, var url: String)
 
     private lateinit var drawerLayout: DrawerLayout
     private lateinit var toolbar: MaterialToolbar
@@ -34,11 +44,16 @@ class MainActivity : AppCompatActivity() {
     private lateinit var webContainer: FrameLayout
     private lateinit var progressBar: ProgressBar
 
-    private val tabs = mutableListOf<TabInfo>()
-    private val webViews = mutableMapOf<Int, WebView>()
-    private var currentTabIndex = 0
+    private lateinit var bigTabId: String
+    private lateinit var bigTabName: String
+
+    private val subTabs = mutableListOf<SubTab>()
+    private val webViews = mutableMapOf<String, WebView>()
+    private var currentSubTabId: String? = null
     private var currentPopup: WebView? = null
     private var desktopMode = false
+
+    private val ADD_TAB_ITEM_ID = 999_999
 
     private var fileChooserCallback: ValueCallback<Array<Uri>>? = null
     private val fileChooserLauncher = registerForActivityResult(
@@ -62,11 +77,16 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        bigTabId = intent.getStringExtra(EXTRA_BIG_TAB_ID) ?: "default"
+        bigTabName = intent.getStringExtra(EXTRA_BIG_TAB_NAME) ?: "Tài khoản"
+
         drawerLayout = findViewById(R.id.drawerLayout)
         toolbar = findViewById(R.id.toolbar)
         navTabs = findViewById(R.id.navTabs)
         webContainer = findViewById(R.id.webviewContainer)
         progressBar = findViewById(R.id.progressBar)
+
+        CookieManager.getInstance().setAcceptCookie(true)
 
         setSupportActionBar(toolbar)
         supportActionBar?.setDisplayShowTitleEnabled(true)
@@ -77,46 +97,145 @@ class MainActivity : AppCompatActivity() {
         toolbar.setOnMenuItemClickListener { onOptionsItemSelected(it) }
         toolbar.overflowIcon?.setTint(android.graphics.Color.WHITE)
 
-        loadTabsFromAssets()
+        loadSubTabs()
         buildNavMenu()
 
-        if (tabs.isNotEmpty()) {
-            switchToTab(0)
+        if (subTabs.isNotEmpty()) {
+            switchToSubTab(subTabs[0].id)
         }
 
         navTabs.setNavigationItemSelectedListener { item ->
-            switchToTab(item.itemId)
-            drawerLayout.closeDrawer(GravityCompat.START)
+            if (item.itemId == ADD_TAB_ITEM_ID) {
+                showAddSubTabDialog()
+            } else if (item.itemId in subTabs.indices) {
+                switchToSubTab(subTabs[item.itemId].id)
+                drawerLayout.closeDrawer(GravityCompat.START)
+            }
             true
         }
     }
 
-    private fun loadTabsFromAssets() {
-        tabs.clear()
-        assets.open("links.txt").bufferedReader().useLines { lines ->
-            lines.forEach { rawLine ->
-                val line = rawLine.trim()
-                if (line.isEmpty() || line.startsWith("#")) return@forEach
-                val parts = line.split("|", limit = 2)
-                if (parts.size == 2) {
-                    tabs.add(TabInfo(parts[0].trim(), parts[1].trim()))
-                } else {
-                    // Nếu dòng chỉ có URL, dùng chính URL làm tên tab
-                    tabs.add(TabInfo(line, line))
-                }
+    // ==================== Lưu / đọc danh sách tab nhỏ (riêng theo từng tab lớn) ====================
+
+    private fun prefs() = getSharedPreferences("subtabs_$bigTabId", Context.MODE_PRIVATE)
+
+    private fun loadSubTabs() {
+        subTabs.clear()
+        val saved = prefs().getString("tabs_json", null)
+        if (saved != null) {
+            val arr = JSONArray(saved)
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                subTabs.add(SubTab(obj.getString("id"), obj.getString("name"), obj.getString("url")))
             }
+            return
         }
+        // Tab lớn mới tạo: nạp sẵn 2 tab nhỏ mặc định Dashboard + Web
+        val webUrl = intent.getStringExtra(EXTRA_DEFAULT_WEB_URL)?.takeIf { it.isNotBlank() }
+            ?: "https://render.com"
+        subTabs.add(SubTab(UUID.randomUUID().toString(), "Dashboard", "https://dashboard.render.com"))
+        subTabs.add(SubTab(UUID.randomUUID().toString(), "Web", webUrl))
+        saveSubTabs()
     }
+
+    private fun saveSubTabs() {
+        val arr = JSONArray()
+        subTabs.forEach { tab ->
+            val obj = JSONObject()
+            obj.put("id", tab.id)
+            obj.put("name", tab.name)
+            obj.put("url", tab.url)
+            arr.put(obj)
+        }
+        prefs().edit().putString("tabs_json", arr.toString()).apply()
+    }
+
+    // ==================== Menu danh sách tab nhỏ (drawer bên trái) ====================
 
     private fun buildNavMenu() {
         navTabs.menu.clear()
-        tabs.forEachIndexed { index, tab ->
-            navTabs.menu.add(0, index, index, tab.name)
+        subTabs.forEachIndexed { index, tab ->
+            val item = navTabs.menu.add(0, index, index, tab.name)
+            val deleteBtn = ImageView(this).apply {
+                setImageResource(android.R.drawable.ic_menu_delete)
+                setPadding(28, 20, 28, 20)
+                setOnClickListener { confirmDeleteSubTab(tab.id) }
+            }
+            item.actionView = deleteBtn
+        }
+        navTabs.menu.add(0, ADD_TAB_ITEM_ID, subTabs.size, "+ Thêm tab")
+    }
+
+    private fun showAddSubTabDialog() {
+        val container = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(48, 24, 48, 0)
+        }
+        val nameInput = EditText(this).apply { hint = "Tên tab" }
+        val urlInput = EditText(this).apply { hint = "https://duong-dan-website.com" }
+        container.addView(nameInput)
+        container.addView(urlInput)
+
+        AlertDialog.Builder(this)
+            .setTitle("Thêm tab mới")
+            .setView(container)
+            .setPositiveButton("Thêm") { _, _ ->
+                var url = urlInput.text.toString().trim()
+                val name = nameInput.text.toString().trim().ifEmpty { url }
+                if (url.isNotEmpty()) {
+                    if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                        url = "https://$url"
+                    }
+                    val newTab = SubTab(UUID.randomUUID().toString(), name, url)
+                    subTabs.add(newTab)
+                    saveSubTabs()
+                    buildNavMenu()
+                    switchToSubTab(newTab.id)
+                    drawerLayout.closeDrawer(GravityCompat.START)
+                }
+            }
+            .setNegativeButton("Huỷ", null)
+            .show()
+    }
+
+    private fun confirmDeleteSubTab(tabId: String) {
+        if (subTabs.size <= 1) {
+            AlertDialog.Builder(this)
+                .setMessage("Cần giữ lại ít nhất 1 tab.")
+                .setPositiveButton("OK", null)
+                .show()
+            return
+        }
+        val tab = subTabs.find { it.id == tabId } ?: return
+        AlertDialog.Builder(this)
+            .setTitle("Xoá tab")
+            .setMessage("Xoá tab \"${tab.name}\"?")
+            .setPositiveButton("Xoá") { _, _ -> deleteSubTab(tabId) }
+            .setNegativeButton("Huỷ", null)
+            .show()
+    }
+
+    private fun deleteSubTab(tabId: String) {
+        val index = subTabs.indexOfFirst { it.id == tabId }
+        if (index == -1) return
+
+        webViews.remove(tabId)?.let { wv ->
+            (wv.parent as? FrameLayout)?.removeView(wv)
+            wv.destroy()
+        }
+        subTabs.removeAt(index)
+        saveSubTabs()
+        buildNavMenu()
+
+        if (currentSubTabId == tabId) {
+            switchToSubTab(subTabs[0].id)
         }
     }
 
+    // ==================== WebView ====================
+
     @SuppressLint("SetJavaScriptEnabled")
-    private fun createWebViewForTab(index: Int): WebView {
+    private fun createWebViewForTab(tab: SubTab): WebView {
         val webView = WebView(this)
         webView.settings.apply {
             javaScriptEnabled = true
@@ -134,6 +253,7 @@ class MainActivity : AppCompatActivity() {
             cacheMode = WebSettings.LOAD_DEFAULT
         }
         applyUserAgent(webView)
+        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
 
         webView.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
@@ -146,29 +266,28 @@ class MainActivity : AppCompatActivity() {
                 if (desktopMode) {
                     injectDesktopViewport(view)
                 }
+                CookieManager.getInstance().flush()
             }
         }
 
         webView.webChromeClient = object : WebChromeClient() {
             override fun onProgressChanged(view: WebView, newProgress: Int) {
-                if (webViews[currentTabIndex] === view) {
+                if (webViews[currentSubTabId] === view) {
                     progressBar.visibility = if (newProgress >= 100) View.GONE else View.VISIBLE
                     progressBar.progress = newProgress
                 }
             }
 
             override fun onReceivedTitle(view: WebView, title: String?) {
-                if (webViews[currentTabIndex] === view && !title.isNullOrBlank()) {
+                if (webViews[currentSubTabId] === view && !title.isNullOrBlank()) {
                     toolbar.title = title
                 }
             }
 
-            // Cho phép mở popup / target=_blank (vd màn đăng nhập Google) trong 1 WebView con
-            // xếp chồng lên trên, thay vì cố host lại chính WebView hiện tại (gây crash).
             override fun onCreateWindow(
                 view: WebView, isDialog: Boolean, isUserGesture: Boolean, resultMsg: android.os.Message
             ): Boolean {
-                val popupWebView = WebView(this@MainActivity)
+                val popupWebView = WebView(this@BrowserActivity)
                 popupWebView.settings.javaScriptEnabled = true
                 popupWebView.settings.domStorageEnabled = true
                 popupWebView.settings.setSupportMultipleWindows(true)
@@ -196,7 +315,6 @@ class MainActivity : AppCompatActivity() {
                 return true
             }
 
-            // Chọn file khi bấm "tải lên" trong trang web
             override fun onShowFileChooser(
                 webView: WebView,
                 filePathCallback: ValueCallback<Array<Uri>>,
@@ -217,13 +335,12 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Tải file xuống dùng DownloadManager hệ thống (giống trình duyệt thật)
         webView.setDownloadListener { url, userAgent, contentDisposition, mimeType, _ ->
             val request = DownloadManager.Request(Uri.parse(url))
             request.setMimeType(mimeType)
             request.addRequestHeader("User-Agent", userAgent)
             request.setDescription("Đang tải xuống...")
-            val fileName = URLUtilGuessFileName(url, contentDisposition, mimeType)
+            val fileName = android.webkit.URLUtil.guessFileName(url, contentDisposition, mimeType)
             request.setTitle(fileName)
             request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
             request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
@@ -231,12 +348,9 @@ class MainActivity : AppCompatActivity() {
             dm.enqueue(request)
         }
 
-        webView.loadUrl(tabs[index].url)
+        webView.loadUrl(tab.url)
         return webView
     }
-
-    private fun URLUtilGuessFileName(url: String, contentDisposition: String?, mimeType: String?): String =
-        android.webkit.URLUtil.guessFileName(url, contentDisposition, mimeType)
 
     private fun injectDesktopViewport(webView: WebView) {
         val js = """
@@ -258,25 +372,24 @@ class MainActivity : AppCompatActivity() {
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
                 "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
         } else {
-            null // dùng User-Agent mặc định của thiết bị (di động)
+            null
         }
-        // Trang desktop thường có chữ to hơn khi hiển thị trên màn hình rộng thật,
-        // giảm zoom chữ lại một chút để giống Chrome "Request Desktop Site".
         webView.settings.textZoom = if (desktopMode) 70 else 100
     }
 
-    private fun switchToTab(index: Int) {
-        if (index < 0 || index >= tabs.size) return
-        currentTabIndex = index
+    private fun switchToSubTab(tabId: String) {
+        val tab = subTabs.find { it.id == tabId } ?: return
+        currentSubTabId = tabId
 
-        val webView = webViews.getOrPut(index) { createWebViewForTab(index) }
+        val webView = webViews.getOrPut(tabId) { createWebViewForTab(tab) }
         webContainer.removeAllViews()
         (webView.parent as? FrameLayout)?.removeView(webView)
         webContainer.addView(webView, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
         ))
-        toolbar.title = tabs[index].name
-        navTabs.setCheckedItem(index)
+        toolbar.title = "$bigTabName · ${tab.name}"
+        val index = subTabs.indexOfFirst { it.id == tabId }
+        if (index >= 0) navTabs.setCheckedItem(index)
     }
 
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
@@ -289,22 +402,55 @@ class MainActivity : AppCompatActivity() {
             R.id.action_desktop -> {
                 desktopMode = !desktopMode
                 item.isChecked = desktopMode
-                webViews[currentTabIndex]?.let {
+                webViews[currentSubTabId]?.let {
                     applyUserAgent(it)
                     it.reload()
                 }
                 true
             }
             R.id.action_reload -> {
-                webViews[currentTabIndex]?.reload()
+                webViews[currentSubTabId]?.reload()
                 true
             }
             R.id.action_home -> {
-                webViews[currentTabIndex]?.loadUrl(tabs[currentTabIndex].url)
+                val tab = subTabs.find { it.id == currentSubTabId }
+                if (tab != null) webViews[currentSubTabId]?.loadUrl(tab.url)
+                true
+            }
+            R.id.action_logout -> {
+                confirmLogout()
+                true
+            }
+            R.id.action_back_to_accounts -> {
+                finish()
                 true
             }
             else -> super.onOptionsItemSelected(item)
         }
+    }
+
+    private fun confirmLogout() {
+        AlertDialog.Builder(this)
+            .setTitle("Đăng xuất tài khoản này")
+            .setMessage("Xoá toàn bộ cookie/đăng nhập của tab lớn \"$bigTabName\"? Các tab nhỏ sẽ tải lại từ đầu.")
+            .setPositiveButton("Đăng xuất") { _, _ -> doLogout() }
+            .setNegativeButton("Huỷ", null)
+            .show()
+    }
+
+    private fun doLogout() {
+        CookieManager.getInstance().removeAllCookies(null)
+        CookieManager.getInstance().flush()
+        WebStorage.getInstance().deleteAllData()
+        webViews.forEach { (id, wv) ->
+            wv.clearCache(true)
+            subTabs.find { it.id == id }?.let { wv.loadUrl(it.url) }
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        CookieManager.getInstance().flush()
     }
 
     override fun onBackPressed() {
@@ -319,11 +465,17 @@ class MainActivity : AppCompatActivity() {
             drawerLayout.closeDrawer(GravityCompat.START)
             return
         }
-        val current = webViews[currentTabIndex]
+        val current = webViews[currentSubTabId]
         if (current != null && current.canGoBack()) {
             current.goBack()
         } else {
             super.onBackPressed()
         }
+    }
+
+    companion object {
+        const val EXTRA_BIG_TAB_ID = "big_tab_id"
+        const val EXTRA_BIG_TAB_NAME = "big_tab_name"
+        const val EXTRA_DEFAULT_WEB_URL = "default_web_url"
     }
 }

@@ -1,63 +1,64 @@
-# WebView Multi-Account App
+# Multi Account WebView (1 APK duy nhất)
 
-Trình duyệt WebView nhiều tab, build ra nhiều APK (mỗi APK ứng với 1 tài khoản Google/dùng riêng) từ **cùng 1 codebase** thông qua Gradle product flavors.
+Ứng dụng WebView có **nhiều "tab lớn"**, mỗi tab lớn = **1 tài khoản Google riêng biệt, session/cookie
+tách biệt hoàn toàn** — dù chỉ nằm trong **1 APK**. Trong mỗi tab lớn có các **"tab nhỏ"** (mặc định:
+`Dashboard` trỏ tới `dashboard.render.com`, `Web` trỏ tới trang bạn muốn keep-alive), có thể tự
+thêm/xoá tab nhỏ ngay trong app.
 
-## Vì sao không cần "luồng đăng nhập riêng"?
+## Vì sao tách được session trong cùng 1 APK?
 
-Mỗi flavor có `applicationId` khác nhau (`com.example.webviewapp.accounta`, `.accountb`, ...).
-Android tự cô lập dữ liệu (cookie, localStorage, cache) theo từng package name — nên bạn chỉ cần
-cài các APK, đăng nhập Google 1 lần trong từng app, phiên đăng nhập sẽ không lẫn giữa các app.
-=> Có thể cài **tất cả APK song song trên cùng 1 máy** vì package name khác nhau.
+Android cho phép 1 app chạy nhiều **tiến trình (process)** song song, mỗi tiến trình có vùng nhớ và
+(quan trọng nhất) **thư mục dữ liệu WebView riêng** nếu ta gọi `WebView.setDataDirectorySuffix()`.
+App này khai báo sẵn **6 "slot"** (`BrowserActivitySlot0`..`Slot5`), mỗi slot chạy ở 1 tiến trình
+riêng (`android:process=":slot0"`, `":slot1"`, ...). Khi bạn tạo 1 tài khoản mới, nó được gán vào
+1 slot còn trống — đăng nhập Google ở slot này không hề ảnh hưởng / không nhìn thấy được ở slot khác.
 
-## 1. Thiết lập keystore (chỉ làm 1 lần)
+**Giới hạn:** tối đa **6 tài khoản cùng lúc** vì số slot được khai báo cứng trong code. Muốn tăng lên,
+xem mục "Tăng số lượng tài khoản tối đa" bên dưới.
 
-Cần dùng **chung 1 keystore cho mọi flavor** (không bắt buộc phải khác nhau — vì phân biệt app đã
-dựa vào applicationId rồi). Việc dùng chung giúp bạn update app sau này mà không lỗi "chữ ký không khớp".
+## Cách dùng trong app
 
-```bash
-keytool -genkey -v -keystore release.keystore -alias mykey \
-  -keyalg RSA -keysize 2048 -validity 10000
-```
+1. Mở app → màn hình đầu tiên là **danh sách tài khoản** (trống lúc đầu)
+2. Bấm **"+ Thêm tài khoản"** → nhập tên (tuỳ ý) + link web cần keep-alive → bấm Thêm
+   → app tự mở tài khoản đó với 2 tab nhỏ mặc định: `Dashboard` (Render) và `Web` (link bạn nhập)
+3. Trong màn hình 1 tài khoản: bấm menu 3 gạch góc trên trái để xem/chuyển/thêm/xoá tab nhỏ
+4. Đăng nhập Google ngay trong tab Dashboard — lần sau mở lại tài khoản này sẽ **không cần đăng nhập
+   lại** (cookie được lưu riêng theo slot, tự ghi xuống đĩa sau mỗi lần tải trang)
+5. Muốn đăng xuất tài khoản đó (vd để tái sử dụng slot cho tài khoản Google khác): vào menu ⋮ trên
+   toolbar → **"Đăng xuất tài khoản này"**
+6. Nút ⋮ trên toolbar cũng có: Chế độ máy tính (đổi User-Agent + ép layout desktop), Tải lại trang,
+   Về trang chủ tab, Về danh sách tài khoản
 
-Sau đó thêm các secret sau vào **GitHub repo → Settings → Secrets and variables → Actions**:
+## Lưu ý quan trọng: Google có thể vẫn chặn đăng nhập trong WebView
 
-| Secret | Giá trị |
-|---|---|
-| `KEYSTORE_BASE64` | `base64 -w0 release.keystore` (nội dung base64 của file keystore) |
-| `KEYSTORE_PASSWORD` | mật khẩu keystore |
-| `KEY_ALIAS` | `mykey` (hoặc alias bạn đặt) |
-| `KEY_PASSWORD` | mật khẩu key |
+Google có chính sách chặn đăng nhập trong WebView tự chế (kể cả không lỗi kỹ thuật gì), hiện thông báo
+kiểu "This browser or app may not be secure". Đây là giới hạn từ phía Google, không phải lỗi app. Nếu
+gặp phải, báo lại để đổi hướng xử lý (thường cần Chrome Custom Tabs riêng cho bước đăng nhập).
 
-## 2. Thêm 1 "apk/tài khoản" mới
+## Thiết lập build (giống trước, không đổi)
 
-1. Mở `app/build.gradle`, trong khối `productFlavors`, copy 1 block flavor có sẵn, đổi tên
-   (vd `accountC`) và `applicationId` (vd `com.example.webviewapp.accountc`).
-2. Tạo file `app/src/accountC/assets/links.txt`, mỗi dòng 1 tab theo định dạng:
+1. Chạy workflow **"0. Tạo keystore (chạy 1 lần)"** trong tab Actions để tạo keystore
+2. Thêm 4 secret: `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`
+3. Push code lên nhánh `main` → Actions tự build và tạo Release đính kèm file
+   `MultiAccountWebView.apk` — vào tab **Releases** để tải, không cần vào Actions
+
+## Tăng số lượng tài khoản tối đa (hiện đang là 6)
+
+1. Mở `app/src/main/java/com/example/webviewapp/BrowserSlots.kt`, thêm dòng:
+   ```kotlin
+   class BrowserActivitySlot6 : BrowserActivity()
    ```
-   Tên tab|https://duong-dan-website.com
+2. Mở `app/src/main/AndroidManifest.xml`, thêm block:
+   ```xml
+   <activity android:name=".BrowserActivitySlot6" android:process=":slot6"
+       android:exported="false" android:configChanges="orientation|screenSize|keyboardHidden" />
    ```
-3. Commit & push. GitHub Actions sẽ tự phát hiện flavor mới (do `app/build.gradle` thay đổi)
-   và build APK cho **tất cả** flavor (an toàn, tránh sót app khi đổi cấu hình chung).
-4. Nếu chỉ sửa link của 1 app đã có sẵn (chỉ đổi file trong `app/src/accountA/assets/links.txt`
-   chẳng hạn), Actions sẽ **chỉ build lại app đó**.
+3. Mở `app/src/main/java/com/example/webviewapp/AccountListActivity.kt`, thêm
+   `BrowserActivitySlot6::class.java` vào cuối danh sách `slotActivities`.
+4. Commit, push, build lại.
 
-## 3. Lấy APK
+## Cài đặt lên máy
 
-Vào tab **Actions** trên GitHub → chọn lần chạy mới nhất → mục **Artifacts** phía dưới,
-tải file `apk-accountA`, `apk-accountB`, ... về máy rồi cài trực tiếp (bật "Cài từ nguồn không xác định"
-nếu Android yêu cầu).
-
-## 4. Chạy build thủ công / ép build lại toàn bộ
-
-Vào tab Actions → chọn workflow "Build APKs" → **Run workflow** → tick `force_all` nếu muốn build lại
-tất cả APK bất kể có thay đổi hay không.
-
-## Tính năng WebView đã có
-
-- Nhiều tab, danh sách tab nằm trong menu 3 gạch (góc trên bên trái)
-- Chuyển đổi "Chế độ máy tính" (đổi User-Agent desktop, có trong menu overflow ⋮ trên toolbar)
-- Tải file xuống qua DownloadManager hệ thống (giống trình duyệt thật)
-- Tải file lên (input file trên web) qua bộ chọn file của Android
-- Hỗ trợ mở tab/popup mới (`target=_blank`, `window.open`)
-- Nút Reload, nút "Về trang chủ tab" trong menu overflow
-- Nút back vật lý sẽ quay lại lịch sử trong WebView trước khi thoát app
+Chỉ có **1 file APK duy nhất** (`MultiAccountWebView.apk`) — cài 1 lần, dùng cho mọi tài khoản (khác
+hoàn toàn cách cũ là mỗi tài khoản 1 APK riêng). Cập nhật app sau này chỉ cần cài đè, dữ liệu/tài khoản
+đã lưu vẫn giữ nguyên.

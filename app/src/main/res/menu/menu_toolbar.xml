@@ -14,4 +14,12 @@
         android:id="@+id/action_home"
         android:title="@string/menu_home"
         app:showAsAction="never" />
+    <item
+        android:id="@+id/action_logout"
+        android:title="Đăng xuất tài khoản này"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/action_back_to_accounts"
+        android:title="Về danh sách tài khoản"
+        app:showAsAction="never" />
 </menu>
